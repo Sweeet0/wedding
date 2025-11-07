@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Happy Wedding! 受付アプリ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts (M PLUS Rounded 1c) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght400;500;700;800&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Tailwindのカスタム設定 */
+        body {
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            background-color: #FFF9FB; /* サンリオ風の薄いピンク背景 */
+        }
+        /* スクロールバーを非表示にしつつ、スクロールは可能にする（iPad風） */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        /* 出席済みのスタイル */
+        .attended {
+            text-decoration: line-through;
+            color: #9ca3af; /* gray-400 */
+        }
+        .attended::after {
+            content: ' ✅';
+        }
+        /* 画面切り替え用 */
+        .hidden-page {
+            display: none;
+        }
+        /* AIボタンのホバーエフェクト */
+        .ai-button:hover:not(:disabled) {
+            box-shadow: 0 4px 15px rgba(255, 105, 180, 0.6);
+        }
+
+        /* --- カスタム: キャラクター画像の縮小とオフセット設定 --- */
+        /* 画面2の画像 */
+        #list-character-image {
+            /* 80%に縮小し、Y軸（下方向）に8px移動（Tailwindのtranslate-y-2に相当） */
+            transform: rotate(2deg) scale(0.8) translateY(0.5rem); 
+        }
+        /* 画面1の画像（テーブルボタン内） */
+        .table-character-image {
+             /* 画面2と同じ設定を適用 */
+            transform: rotate(2deg) scale(1) translateY(0.5rem); 
+        }
+        /* ------------------------------------------------ */
+        
+        /* --- カスタム: 完了チェックマークのスタイル --- */
+        .completion-checkmark {
+            position: absolute;
+            top: -10px; /* 少し上にずらす */
+            right: -10px; /* 少し右にずらす */
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background-color: #10B981; /* エメラルドグリーン */
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
+            font-weight: bold;
+            font-size: 1.2rem;
+            z-index: 10;
+            pointer-events: none; /* クリックイベントを透過させる */
+        }
+
+        /* 画面2のヘッダー要素を上に寄せるための調整 */
+        .list-header-top {
+            margin-bottom: -50px; /* キャラクター画像との重なりを考慮して調整 */
+        }
+
+    </style>
+</head>
+<body class="antialiased text-gray-800 min-h-screen">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+
+        <!-- 画面1: テーブル選択画面 -->
+        <div id="page-home">
+            <header class="text-center mb-8">
+                <h1 class="text-3xl md:text-4xl font-extrabold text-pink-500" style="text-shadow: 1px 1px 2px #ffe4e6;">
+                    🌸 Lukas & Reika's Wedding 🌸
+                </h1>
+                <p class="text-lg md:text-xl text-pink-400 mt-2">テーブルをえらんでください</p>
+            </header>
+
+            <!-- 検索機能 -->
+            <div class="mb-8 p-3 bg-white rounded-2xl shadow-lg">
+                <input type="text" id="guest-search-input" placeholder="氏名で検索 (例: 田村)"
+                       class="w-full text-lg p-3 rounded-xl border-2 border-pink-100 focus:ring-pink-400 focus:border-pink-400 font-medium">
+            </div>
+            <div id="search-result-area" class="mb-8 hidden">
+                <p class="text-lg font-semibold text-gray-700 mb-2">🔎 検索結果:</p>
+                <div id="search-result-list" class="space-y-3">
+                    <!-- 検索結果がここに表示されます -->
+                </div>
+                <button id="clear-search-button" class="mt-4 text-sm text-pink-500 hover:text-pink-700 font-bold p-2">検索結果をクリア</button>
+            </div>
+            <!-- テーブル選択グリッド (iPad向けに最適化) -->
+            <div id="table-selection-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
+                <!-- テーブルボタンはJSによってここに挿入されます -->
+            </div>
+            
+            <!-- ✨ Gemini API 機能エリア (画面1の最下部に配置 - 常に有効) -->
+            <div id="gemini-api-area" class="mt-12 border-t-2 border-pink-200 pt-8 text-center">
+                <p class="text-xl font-bold text-pink-600 mb-4">受付トークをサポート！</p>
+                <div class="p-6 bg-white rounded-2xl shadow-lg border-2 border-pink-100">
+                    <button id="generate-talk-button"
+                            class="ai-button text-xl font-extrabold text-white bg-pink-500 rounded-full px-8 py-4 shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95">
+                        🎀 テーマトークを生成
+                    </button>
+                    <div id="talk-result-area" 
+                         class="hidden mt-6 p-5 bg-pink-50 rounded-xl shadow-inner text-gray-700 text-lg min-h-[50px] text-left border-2 border-pink-200">
+                        <!-- AIによる生成結果がここに表示されます -->
+                    </div>
+                </div>
+            </div>
+            <!-- ✨ ここまで -->
+        </div>
+
+        <!-- 画面2: 出席者リスト画面 -->
+        <!-- NOTE: 背景色、パディング、シャドウはJSで動的に適用されます -->
+        <div id="page-list" class="hidden-page">
+            
+            <header class="mb-8">
+                <!-- 1. 戻るボタン/キャラクター画像/テーブル情報を横並びで配置 (上寄せ) -->
+                <div class="flex items-start justify-between list-header-top">
+                    <!-- 左: 戻るボタン -->
+                    <button id="back-button-list" class="text-lg text-pink-600 hover:text-pink-800 transition-colors duration-200 font-bold p-2 rounded-xl bg-white shadow-lg transform hover:scale-105 active:scale-95">
+                        &larr; もどる
+                    </button> 
+                    
+                    <!-- 中央: キャラクター画像 -->
+                    <div class="absolute left-1/2 transform -translate-x-1/2 -top-0.5">
+                        <img id="list-character-image" src="" alt="キャラクター" 
+                             class="w-36 h-36 md:w-48 md:h-48 object-contain rounded-3xl shadow-xl border-4 border-white mx-auto">
+                    </div>
+                    
+                    <!-- 右: テーブル情報 -->
+                    <div class="text-right">
+                        <h2 id="list-table-id" class="text-2xl md:text-3xl font-extrabold text-pink-600">
+                            <!-- テーブルID (例: 1-1) -->
+                        </h2>
+                        <p class="text-lg text-gray-500">の皆さま</p>
+                    </div>
+                </div>
+                
+                <!-- 2. スペーサー/リストヘッダー (画像が浮いているため、リスト開始位置を調整) -->
+                <div class="pt-28 md:pt-32">
+                    <h3 class="text-xl font-extrabold text-pink-500 border-b-2 border-pink-300 pb-2 mb-4">出席者リスト</h3>
+                </div>
+            </header>
+
+            <!-- 出席者リスト -->
+            <ul id="guest-list-ul" class="space-y-3">
+                <!-- 出席者リストはJSによってここに挿入されます -->
+            </ul>
+            
+            <!-- 確定ボタン -->
+            <div class="mt-8 text-center">
+                <button id="confirm-button" class="text-2xl font-extrabold text-white bg-green-500 rounded-full px-10 py-4 shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95">
+                    受付 確定
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+    <script>
+        // --- 5. 組み込みデータ ---
+        const appData = {
+            "guestList": [
+                { "id": 1, "name": "田村 光", "table": "1-1" },
+                { "id": 2, "name": "中村 圭輔", "table": "1-1" },
+                { "id": 3, "name": "藤野 準也", "table": "1-1" },
+                { "id": 4, "name": "森山 勇介", "table": "1-1" },
+                { "id": 5, "name": "森山 理紗", "table": "1-1" },
+                { "id": 6, "name": "上岡 光", "table": "1-2" },
+                { "id": 7, "name": "上畑 日菜乃", "table": "1-2" },
+                { "id": 8, "name": "鶴岡 美緒", "table": "1-2" },
+                { "id": 9, "name": "寺川 貴弘", "table": "1-2" },
+                { "id": 10, "name": "嶋田 咲紀", "table": "1-3" },
+                { "id": 11, "name": "六人部 あゆみ", "table": "1-3" },
+                { "id": 12, "name": "中岡 天音", "table": "1-3" },
+                { "id": 13, "name": "小森 未有希", "table": "1-3" },
+                { "id": 14, "name": "鈴木 紗緒里", "table": "1-3" },
+                { "id": 15, "name": "牧野 那月", "table": "1-3" },
+                { "id": 16, "name": "上岡 忠則", "table": "2-1" },
+                { "id": 17, "name": "上岡 さき子", "table": "2-1" },
+                { "id": 18, "name": "上岡 真理", "table": "2-1" },
+                { "id": 19, "name": "武田 マウロ", "table": "2-1" },
+                { "id": 20, "name": "上岡 優明", "table": "2-1" },
+                { "id": 21, "name": "生田 蓮翔", "table": "2-1" },
+                { "id": 22, "name": "仲里 グスタボ", "table": "2-1" },
+                { "id": 23, "name": "中芝 由貴子", "table": "2-2" },
+                { "id": 24, "name": "中芝 純子", "table": "2-2" },
+                { "id": 25, "name": "中芝 虹空", "table": "2-2" },
+                { "id": 26, "name": "山﨑 靖代", "table": "2-2" },
+                { "id": 27, "name": "中芝 凌", "table": "2-2" },
+                { "id": 28, "name": "中芝 愛里", "table": "2-2" },
+                { "id": 29, "name": "片山 裕樹", "table": "2-2" }
+            ],
+            "tableDetails": [
+                { "tableId": "1-1", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7058.PNG", "themeColor": "bg-purple-200", "textColor": "text-purple-700" }, 
+                { "tableId": "1-2", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7063.PNG", "themeColor": "bg-yellow-200", "textColor": "text-yellow-700" },
+                { "tableId": "1-3", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7059.PNG", "themeColor": "bg-blue-200", "textColor": "text-blue-700" },
+                { "tableId": "2-1", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7060.PNG", "themeColor": "bg-pink-200", "textColor": "text-pink-700" },
+                { "tableId": "2-2", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7066.PNG", "themeColor": "bg-orange-200", "textColor": "text-orange-700" } 
+            ]
+        };
+
+        // --- DOM要素 ---
+        const pageHome = document.getElementById('page-home');
+        const pageList = document.getElementById('page-list');
+        const tableSelectionGrid = document.getElementById('table-selection-grid');
+        const guestListUl = document.getElementById('guest-list-ul');
+        const backButtonList = document.getElementById('back-button-list'); // 画面2の「もどる」ボタン
+        const listTableId = document.getElementById('list-table-id');
+        const listCharacterImage = document.getElementById('list-character-image');
+        const guestSearchInput = document.getElementById('guest-search-input');
+        const searchResultArea = document.getElementById('search-result-area');
+        const searchResultList = document.getElementById('search-result-list');
+        const clearSearchButton = document.getElementById('clear-search-button');
+        
+        // AIエリアの要素
+        const generateTalkButton = document.getElementById('generate-talk-button');
+        const talkResultArea = document.getElementById('talk-result-area');
+
+        // 確定ボタン
+        const confirmButton = document.getElementById('confirm-button');
+
+
+        // --- 出欠データ (localStorage) ---
+        let attendanceState = JSON.parse(localStorage.getItem('weddingAttendance')) || {};
+
+        function saveState() {
+            localStorage.setItem('weddingAttendance', JSON.stringify(attendanceState));
+        }
+
+        /**
+         * 特定のテーブルのゲスト全員がチェックイン済みかを確認する
+         */
+        function isTableComplete(tableId) {
+            const guestsForTable = appData.guestList.filter(g => g.table === tableId);
+            if (guestsForTable.length === 0) return false; 
+            return guestsForTable.every(guest => {
+                const guestKey = `guest-${guest.id}`;
+                return attendanceState[guestKey] === true;
+            });
+        }
+
+
+        // --- 画面切り替え ---
+        function showPage(pageId) {
+            if (pageId === 'home') {
+                pageHome.classList.remove('hidden-page');
+                pageList.classList.add('hidden-page');
+                
+                // AIエリアの状態リセット（ボタンは常に有効なので、結果表示のみ非表示に）
+                talkResultArea.classList.add('hidden');
+                talkResultArea.innerHTML = '';
+
+                renderHomeScreen(); // 状態が変更されている可能性があるので、ホーム画面を再描画
+                clearSearch(); // ホームに戻る際、検索状態をリセット
+            } else if (pageId === 'list') {
+                pageHome.classList.add('hidden-page');
+                pageList.classList.remove('hidden-page');
+                
+                // ★★★ 修正箇所: 画面2を開くときにスクロール位置をリセット ★★★
+                window.scrollTo(0, 0);
+            }
+        }
+
+        // --- 画面描画 ---
+
+        // 画面1: テーブル選択画面の描画
+        function renderHomeScreen() {
+            tableSelectionGrid.innerHTML = ''; 
+            
+            appData.tableDetails.forEach((table) => {
+                const button = document.createElement('button');
+                const colorClass = table.themeColor; 
+                const textColor = table.textColor;
+
+                button.className = `p-6 rounded-3xl shadow-xl transition-all duration-200 ease-in-out transform hover:scale-105 active:scale-95 ${colorClass} relative`;
+                button.dataset.tableId = table.tableId; 
+
+                // 完了チェックのロジック
+                const isComplete = isTableComplete(table.tableId);
+                const checkmarkHtml = isComplete ? '<div class="completion-checkmark">✓</div>' : '';
+
+                button.innerHTML = `
+                    ${checkmarkHtml}
+                    <img src="${table.characterImageUrl}" alt="${table.tableId}" 
+                         class="table-character-image w-full h-32 md:h-40 object-contain rounded-2xl mb-4 border-4 border-white shadow-md"
+                         onerror="this.src='https://placehold.co/150x150/cccccc/333333?text=Image+Error'; this.onerror=null;">
+                    <span class="text-2xl md:text-3xl font-extrabold ${textColor}">${table.tableId}</span>
+                `;
+
+                button.addEventListener('click', () => {
+                    renderListPage(table.tableId);
+                });
+                tableSelectionGrid.appendChild(button);
+            });
+        }
+
+        // 画面2: 出席者リスト画面の描画
+        function renderListPage(tableId) {
+            const tableInfo = appData.tableDetails.find(t => t.tableId === tableId);
+            if (!tableInfo) return;
+
+            // --- 🎨 画面2の背景色をテーマカラーの薄い色に変更 ---
+            const themeColorClass = tableInfo.themeColor; 
+            const listBgClass = themeColorClass.replace(/-\d+/, '-50'); 
+
+            pageList.classList.forEach(cls => {
+                if (cls.match(/^bg-.*-50$/)) {
+                    pageList.classList.remove(cls);
+                }
+            });
+
+            // position-relativeを追加し、絶対位置の画像を内包できるようにする
+            pageList.classList.add(listBgClass, 'p-6', 'rounded-3xl', 'shadow-xl', 'relative'); 
+            // ----------------------------------------------------
+
+
+            // ヘッダー情報更新
+            listTableId.textContent = tableId;
+            listCharacterImage.src = tableInfo.characterImageUrl;
+            listCharacterImage.alt = tableInfo.tableId;
+            listCharacterImage.onerror = () => {
+                listCharacterImage.src = 'https://placehold.co/150x150/cccccc/333333?text=Image+Error';
+                listCharacterImage.onerror = null;
+            };
+
+            // 出席者リスト更新
+            guestListUl.innerHTML = ''; 
+            const guestsForTable = appData.guestList.filter(g => g.table === tableId);
+
+            if (guestsForTable.length === 0) {
+                guestListUl.innerHTML = '<li class="text-center text-gray-500 text-lg p-4 bg-white rounded-xl shadow-sm">このテーブルのゲストはいません</li>';
+            }
+
+            guestsForTable.forEach(guest => {
+                const li = document.createElement('li');
+                const guestKey = `guest-${guest.id}`;
+                
+                // iPadタップに最適化
+                li.className = "text-xl md:text-2xl p-4 bg-white rounded-xl shadow-md cursor-pointer transition-colors duration-200 font-medium hover:bg-pink-50 active:bg-pink-100";
+                li.textContent = guest.name;
+                li.dataset.guestId = guest.id;
+
+                // 保存された状態を反映
+                if (attendanceState[guestKey]) {
+                    li.classList.add('attended');
+                }
+
+                // クリックで出欠トグル
+                li.addEventListener('click', () => {
+                    const currentState = attendanceState[guestKey] || false;
+                    attendanceState[guestKey] = !currentState; 
+                    li.classList.toggle('attended', attendanceState[guestKey]);
+                    saveState(); 
+                });
+
+                guestListUl.appendChild(li);
+            });
+
+            // 画面表示
+            showPage('list');
+        }
+        
+        // --- 検索機能 ---
+        guestSearchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            if (query.length < 1) {
+                clearSearch();
+                return;
+            }
+
+            const results = appData.guestList.filter(guest => guest.name.toLowerCase().includes(query.toLowerCase()));
+            renderSearchResults(results);
+        });
+
+        clearSearchButton.addEventListener('click', clearSearch);
+
+        function clearSearch() {
+            searchResultArea.classList.add('hidden');
+            searchResultList.innerHTML = '';
+            guestSearchInput.value = '';
+            tableSelectionGrid.classList.remove('hidden');
+        }
+
+        function renderSearchResults(results) {
+            searchResultList.innerHTML = '';
+            
+            if (results.length === 0) {
+                searchResultList.innerHTML = '<p class="text-red-500 p-3 bg-white rounded-xl shadow-sm">該当するゲストは見つかりませんでした。</p>';
+            } else {
+                results.forEach(guest => {
+                    const li = document.createElement('div');
+                    const guestKey = `guest-${guest.id}`;
+                    
+                    li.className = "text-xl p-4 bg-white rounded-xl shadow-md cursor-pointer transition-colors duration-200 font-medium hover:bg-pink-50 active:bg-pink-100";
+                    li.innerHTML = `${guest.name} <span class="text-sm text-gray-500 ml-2">[${guest.table}]</span>`;
+                    
+                    if (attendanceState[guestKey]) {
+                        li.classList.add('attended');
+                    }
+
+                    // クリックで出欠トグル
+                    li.addEventListener('click', () => {
+                        const currentState = attendanceState[guestKey] || false;
+                        attendanceState[guestKey] = !currentState;
+                        li.classList.toggle('attended', attendanceState[guestKey]);
+                        saveState();
+                        // 状態変更後、テーブルリスト画面へ遷移
+                        renderListPage(guest.table);
+                    });
+
+                    searchResultList.appendChild(li);
+                });
+            }
+            tableSelectionGrid.classList.add('hidden');
+            searchResultArea.classList.remove('hidden');
+        }
+
+
+        // --- イベントリスナー ---
+        
+        // 画面2「もどる」ボタン: ホーム画面へ戻る
+        backButtonList.addEventListener('click', () => {
+            showPage('home');
+        });
+        
+        // 画面2「確定」ボタン: ホーム画面へ戻る
+        confirmButton.addEventListener('click', () => {
+            showPage('home');
+        });
+
+        // Gemini API ボタンのイベントリスナー (画面1)
+        generateTalkButton.addEventListener('click', handleGenerateTalk);
+
+
+        // --- 初期化 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            renderHomeScreen();
+            showPage('home');
+        });
+
+        // --- Gemini API 機能 ---
+        const apiKey = ""; 
+
+        /**
+         * 指数関数的バックオフでAPIリクエストをリトライするフェッチラッパー
+         */
+        async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
+            try {
+                const response = await fetch(url, options);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response;
+            } catch (error) {
+                if (retries > 0) {
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    return fetchWithRetry(url, options, retries - 1, delay * 2);
+                } else {
+                    throw error;
+                }
+            }
+        }
+
+        /**
+         * Gemini APIを呼び出し、AIによる会話テーマを生成する
+         */
+        async function callGeminiApi(systemPrompt, userPrompt) {
+            // gemini-2.5-flash-preview-09-25 is an alias for gemini-2.5-flash-preview-09-2025
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-25:generateContent?key=${apiKey}`;
+            
+            const payload = {
+                contents: [{ parts: [{ text: userPrompt }] }],
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+            };
+
+            const options = {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            };
+
+            try {
+                const response = await fetchWithRetry(apiUrl, options);
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates[0].content?.parts?.[0]?.text) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    throw new Error("AIからの応答が空です。");
+                }
+            } catch (error) {
+                talkResultArea.textContent = `エラーが発生しました: AIの呼び出しに失敗しました。ネットワーク接続を確認してください。`; 
+                console.error("Gemini API Call Failed:", error);
+                throw new Error("AIの呼び出しに失敗しました。");
+            }
+        }
+
+        /**
+         * 「テーマトークを生成」ボタンが押されたときの処理 (テーブル非依存)
+         */
+        async function handleGenerateTalk(event) {
+            
+            // ボタンのスタイルを更新 (ローディング状態)
+            event.currentTarget.disabled = true;
+            event.currentTarget.classList.remove('bg-pink-500', 'hover:scale-105');
+            event.currentTarget.classList.add('bg-pink-300', 'cursor-not-allowed');
+
+            // ローディング表示
+            talkResultArea.innerHTML = '<span class="text-pink-500 animate-pulse font-bold">考え中... 🎀</span>';
+            talkResultArea.classList.remove('hidden');
+
+            // AIへのプロンプト設定（一般的な結婚式のテーマトーク）
+            const systemPrompt = `あなたはサンリオキャラクターのような、とても親切で可愛らしいアシスタントです。結婚式のアイスブレイクを手伝っています。明るく、ポジティブで、絵文字をたくさん使った短い（2〜3文）のテーマトークを生成してください。`;
+            const userPrompt = `結婚式の受付で、ゲスト同士やスタッフとの間にすぐに笑顔が生まれるような、誰にでも気軽に話せるテーマトークの「お題」を1つだけ提案してください。テーブル情報に依存しない、一般的な話題でお願いします。`;
+
+            try {
+                const generatedText = await callGeminiApi(systemPrompt, userPrompt);
+                // 改行をHTMLの<br>に変換して表示
+                talkResultArea.innerHTML = generatedText.replace(/\n/g, '<br>');
+            } catch (error) {
+                // エラーは callGeminiApi 内部で処理済み
+            } finally {
+                // 処理完了後、ボタンを再度有効化
+                event.currentTarget.disabled = false;
+                event.currentTarget.classList.remove('bg-pink-300', 'cursor-not-allowed');
+                event.currentTarget.classList.add('bg-pink-500', 'hover:scale-105');
+            }
+        }
+
+    </script>
+</body>
+</html>
