@@ -9,7 +9,7 @@
     <!-- Google Fonts (M PLUS Rounded 1c) -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght400;500;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700;800&display=swap" rel="stylesheet">
     
     <style>
         /* Tailwindのカスタム設定 */
@@ -107,22 +107,6 @@
             <div id="table-selection-grid" class="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-6">
                 <!-- テーブルボタンはJSによってここに挿入されます -->
             </div>
-            
-            <!-- ✨ Gemini API 機能エリア (画面1の最下部に配置 - 常に有効)
-            <div id="gemini-api-area" class="mt-12 border-t-2 border-pink-200 pt-8 text-center">
-                <p class="text-xl font-bold text-pink-600 mb-4">受付トークをサポート！</p>
-                <div class="p-6 bg-white rounded-2xl shadow-lg border-2 border-pink-100">
-                    <button id="generate-talk-button"
-                            class="ai-button text-xl font-extrabold text-white bg-pink-500 rounded-full px-8 py-4 shadow-xl transition-all duration-300 transform hover:scale-105 active:scale-95">
-                        🎀 テーマトークを生成
-                    </button>
-                    <div id="talk-result-area" 
-                         class="hidden mt-6 p-5 bg-pink-50 rounded-xl shadow-inner text-gray-700 text-lg min-h-[50px] text-left border-2 border-pink-200">
-                        AIによる生成結果がここに表示されます
-                    </div>
-                </div>
-            </div>
-            ここまで -->
         </div>
 
         <!-- 画面2: 出席者リスト画面 -->
@@ -214,7 +198,8 @@
                 { "tableId": "1-3", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7059.PNG", "themeColor": "bg-blue-200", "textColor": "text-blue-700" },
                 { "tableId": "2-1", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7060.PNG", "themeColor": "bg-pink-200", "textColor": "text-pink-700" },
                 { "tableId": "2-2", "characterImageUrl": "https://sweeet0.github.io/wedding/IMG_7066.PNG", "themeColor": "bg-orange-200", "textColor": "text-orange-700" } 
-            ]
+            ],
+            "currentTableId": null // 画面2で現在開いているテーブルIDを保持
         };
 
         // --- DOM要素 ---
@@ -222,22 +207,15 @@
         const pageList = document.getElementById('page-list');
         const tableSelectionGrid = document.getElementById('table-selection-grid');
         const guestListUl = document.getElementById('guest-list-ul');
-        const backButtonList = document.getElementById('back-button-list'); // 画面2の「もどる」ボタン
+        const backButtonList = document.getElementById('back-button-list');
         const listTableId = document.getElementById('list-table-id');
         const listCharacterImage = document.getElementById('list-character-image');
         const guestSearchInput = document.getElementById('guest-search-input');
         const searchResultArea = document.getElementById('search-result-area');
         const searchResultList = document.getElementById('search-result-list');
         const clearSearchButton = document.getElementById('clear-search-button');
-        
-        // AIエリアの要素
-        const generateTalkButton = document.getElementById('generate-talk-button');
-        const talkResultArea = document.getElementById('talk-result-area');
-
-        // 確定ボタン
         const confirmButton = document.getElementById('confirm-button');
-
-
+        
         // --- 出欠データ (localStorage) ---
         let attendanceState = JSON.parse(localStorage.getItem('weddingAttendance')) || {};
 
@@ -259,23 +237,21 @@
 
 
         // --- 画面切り替え ---
-        function showPage(pageId) {
+        function showPage(pageId, tableId = null) {
             if (pageId === 'home') {
                 pageHome.classList.remove('hidden-page');
                 pageList.classList.add('hidden-page');
                 
-                // AIエリアの状態リセット（ボタンは常に有効なので、結果表示のみ非表示に）
-                talkResultArea.classList.add('hidden');
-                talkResultArea.innerHTML = '';
-
                 renderHomeScreen(); // 状態が変更されている可能性があるので、ホーム画面を再描画
                 clearSearch(); // ホームに戻る際、検索状態をリセット
+                appData.currentTableId = null; // 現在のテーブルIDをリセット
             } else if (pageId === 'list') {
                 pageHome.classList.add('hidden-page');
                 pageList.classList.remove('hidden-page');
                 
-                // ★★★ 修正箇所: 画面2を開くときにスクロール位置をリセット ★★★
+                // 画面2を開くときにスクロール位置をリセット
                 window.scrollTo(0, 0);
+                appData.currentTableId = tableId; // 現在のテーブルIDをセット
             }
         }
 
@@ -375,7 +351,7 @@
             });
 
             // 画面表示
-            showPage('list');
+            showPage('list', tableId);
         }
         
         // --- 検索機能 ---
@@ -446,109 +422,12 @@
             showPage('home');
         });
 
-        // Gemini API ボタンのイベントリスナー (画面1)
-        generateTalkButton.addEventListener('click', handleGenerateTalk);
-
-
         // --- 初期化 ---
         document.addEventListener('DOMContentLoaded', () => {
             renderHomeScreen();
             showPage('home');
         });
 
-        // --- Gemini API 機能 ---
-        const apiKey = "AIzaSyADzIMS_uTImpYqJPc4-y4GapoenOTQzls"; 
-
-        /**
-         * 指数関数的バックオフでAPIリクエストをリトライするフェッチラッパー
-         */
-        async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
-            try {
-                const response = await fetch(url, options);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                return response;
-            } catch (error) {
-                if (retries > 0) {
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    return fetchWithRetry(url, options, retries - 1, delay * 2);
-                } else {
-                    throw error;
-                }
-            }
-        }
-
-        /**
-         * Gemini APIを呼び出し、AIによる会話テーマを生成する
-         */
-        async function callGeminiApi(systemPrompt, userPrompt) {
-            // gemini-2.5-flash-preview-09-25 is an alias for gemini-2.5-flash-preview-09-2025
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-25:generateContent?key=${apiKey}`;
-            
-            const payload = {
-                contents: [{ parts: [{ text: userPrompt }] }],
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }]
-                },
-            };
-
-            const options = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            };
-
-            try {
-                const response = await fetchWithRetry(apiUrl, options);
-                const result = await response.json();
-                
-                if (result.candidates && result.candidates[0].content?.parts?.[0]?.text) {
-                    return result.candidates[0].content.parts[0].text;
-                } else {
-                    throw new Error("AIからの応答が空です。");
-                }
-            } catch (error) {
-                talkResultArea.textContent = `エラーが発生しました: AIの呼び出しに失敗しました。ネットワーク接続を確認してください。`; 
-                console.error("Gemini API Call Failed:", error);
-                throw new Error("AIの呼び出しに失敗しました。");
-            }
-        }
-
-        /**
-         * 「テーマトークを生成」ボタンが押されたときの処理 (テーブル非依存)
-         */
-        async function handleGenerateTalk(event) {
-            
-            // ボタンのスタイルを更新 (ローディング状態)
-            event.currentTarget.disabled = true;
-            event.currentTarget.classList.remove('bg-pink-500', 'hover:scale-105');
-            event.currentTarget.classList.add('bg-pink-300', 'cursor-not-allowed');
-
-            // ローディング表示
-            talkResultArea.innerHTML = '<span class="text-pink-500 animate-pulse font-bold">考え中... 🎀</span>';
-            talkResultArea.classList.remove('hidden');
-
-            // AIへのプロンプト設定（一般的な結婚式のテーマトーク）
-            const systemPrompt = `あなたはサンリオキャラクターのような、とても親切で可愛らしいアシスタントです。結婚式のアイスブレイクを手伝っています。明るく、ポジティブで、絵文字をたくさん使った短い（2〜3文）のテーマトークを生成してください。`;
-            const userPrompt = `結婚式の受付で、ゲスト同士やスタッフとの間にすぐに笑顔が生まれるような、誰にでも気軽に話せるテーマトークの「お題」を1つだけ提案してください。テーブル情報に依存しない、一般的な話題でお願いします。`;
-
-            try {
-                const generatedText = await callGeminiApi(systemPrompt, userPrompt);
-                // 改行をHTMLの<br>に変換して表示
-                talkResultArea.innerHTML = generatedText.replace(/\n/g, '<br>');
-            } catch (error) {
-                // エラーは callGeminiApi 内部で処理済み
-            } finally {
-                // 処理完了後、ボタンを再度有効化
-                event.currentTarget.disabled = false;
-                event.currentTarget.classList.remove('bg-pink-300', 'cursor-not-allowed');
-                event.currentTarget.classList.add('bg-pink-500', 'hover:scale-105');
-            }
-        }
-
     </script>
 </body>
-
 </html>
-
